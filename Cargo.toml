@@ -5,3 +5,6 @@ edition = "2021"
 
 [dependencies]
 clap = { version = "4.5.3", features = ["derive"] }
+
+[dev-dependencies]
+rstest = "0.18.2"

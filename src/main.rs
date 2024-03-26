@@ -1,5 +1,3 @@
-#![feature(test)]
-extern crate test;
 use std::fs;
 
 use clap::Parser;
@@ -18,81 +16,142 @@ struct Args {
     dictionary_file: String,
 }
 
-/// Goes from groups of six letters separated by a space, to a fixed-size board
-fn parse_board(letters: &str) -> [[char; 6]; 8] {
-    let mut board: [[char; 6]; 8] = [[' '; 6]; 8];
+#[derive(Debug, PartialEq)]
+struct Board {
+    letters: Vec<char>,
+    w: usize,
+    h: usize,
+}
 
-    for (ridx, row) in letters.split_whitespace().enumerate() {
-        for (cidx, c) in row.char_indices() {
-            board[ridx][cidx] = c;
+impl Board {
+    /// Goes from groups of six letters separated by a space, to a flat array
+    fn parse_flat_board(letters: &str, width: usize, height: usize) -> Board {
+        let mut bletters = Vec::with_capacity(width * height);
+
+        for c in letters.replace(" ", "").chars() {
+            bletters.push(c);
+        }
+
+        Board {
+            letters: bletters,
+            w: width,
+            h: height,
         }
     }
 
-    board
-}
+    /// Return a list of neighbors. Works as like a 2d array of width `w` and height `h`.
+    /// Gets diagonal neighbors too.
+    ///
+    /// Copied from
+    /// https://stackoverflow.com/questions/9355537/finding-neighbors-of-2d-array-when-represented-as-1d-array
+    ///
+    /// Could perhaps write a version of this that takes in a mutable bit array, sets
+    /// everything to zero, then sets the right ones to true.
+    fn get_neighbors(&self, i: usize) -> Vec<usize> {
+        let size = self.w * self.h;
+        let mut neighbors: Vec<usize> = Vec::new();
 
-/// Goes from groups of six letters separated by a space, to a flat array
-fn parse_flat_board(letters: &str) -> [char; 48] {
-    let mut board: [char; 48] = [' '; 48];
+        if i.checked_sub(self.w).is_some() {
+            neighbors.push(i - self.w); // north
+        }
 
-    for (idx, c) in letters.replace(" ", "").char_indices() {
-        board[idx] = c;
+        if i % self.w != 0 {
+            neighbors.push(i - 1); // west
+        }
+
+        if (i + 1) % self.w != 0 {
+            neighbors.push(i + 1); // east
+        }
+
+        if (i + self.w) < size {
+            neighbors.push(i + self.w); // south
+        }
+
+        if (i.checked_sub(self.w + 1).is_some()) & (i % self.w != 0) {
+            neighbors.push(i - self.w - 1); // northwest
+        }
+
+        if ((i + 1).checked_sub(self.w).is_some()) & ((i + 1) % self.w != 0) {
+            neighbors.push(i + 1 - self.w); // northeast
+        }
+
+        if ((i + self.w - 1) < size) & (i % self.w != 0) {
+            neighbors.push(i + self.w - 1); // southwest
+        }
+
+        if ((i + self.w + 1) < size) & ((i + 1) % self.w != 0) {
+            neighbors.push(i + self.w + 1); //southeast
+        }
+
+        neighbors
     }
 
-    board
-}
+    /// From a given starting point on the board, what words can be formed?
+    fn find_valid_words_from_start<'a>(
+        &self,
+        start_point: usize,
+        words: &[&'a str],
+    ) -> Vec<String> {
+        let mut result = Vec::new();
 
-/// Return a list of neighbors. Works as like a 2d array of width `w` and height `h`.
-/// Gets diagonal neighbors too.
-///
-/// Copied from
-/// https://stackoverflow.com/questions/9355537/finding-neighbors-of-2d-array-when-represented-as-1d-array
-///
-/// Could perhaps write a version of this that takes in a mutable bit array, sets
-/// everything to zero, then sets the right ones to true.
-fn get_neighbors(i: usize, w: usize, h: usize) -> Vec<usize> {
-    let size = w * h;
-    let mut neighbors: Vec<usize> = Vec::new();
+        let start_letter = [self.letters[start_point]];
 
-    if i.checked_sub(w).is_some() {
-        neighbors.push(i - w); // north
+        for nbr_idx in self.get_neighbors(start_point) {
+            result.extend(self.find_next(words, &start_letter, nbr_idx));
+        }
+        result
     }
 
-    if i % w != 0 {
-        neighbors.push(i - 1); // west
-    }
+    /// A recursive method for finding valid words
+    fn find_next<'a>(
+        &self,
+        words: &[&'a str],
+        start_letters: &[char],
+        current_board_position: usize,
+    ) -> Vec<String> {
+        // If no more words, end
+        if words.is_empty() {
+            return vec![];
+        }
 
-    if (i + 1) % w != 0 {
-        neighbors.push(i + 1); // east
-    }
+        // Otherwise, loop over the neighbors, and return the results
+        let mut result = Vec::new();
+        for nbr_idx in self.get_neighbors(current_board_position) {
+            // What word is created by adding this neighbor?
+            let word: String = vec![start_letters, &[self.letters[nbr_idx]]]
+                .iter()
+                .flat_map(|v| v.iter())
+                .collect();
 
-    if (i + w) < size {
-        neighbors.push(i + w); // south
-    }
+            // If adding this neighbor makes a complete word, push to result
+            if words.contains(&&word.as_str()) {
+                result.push(word.clone());
+            }
 
-    if (i.checked_sub(w + 1).is_some()) & (i % w != 0) {
-        neighbors.push(i - w - 1); // northwest
-    }
+            // What words are left for this word?
+            let rem_words: Vec<&str> = words
+                .iter()
+                .filter(|w| w.starts_with(&word))
+                .copied()
+                .collect();
 
-    if ((i + 1).checked_sub(w).is_some()) & ((i + 1) % w != 0) {
-        neighbors.push(i + 1 - w); // northeast
-    }
+            // Quit if none left
+            if rem_words.is_empty() {
+                return vec![];
+            }
 
-    if ((i + w - 1) < size) & (i % w != 0) {
-        neighbors.push(i + w - 1); // southwest
+            // Call again from this neighbor position and push to the the result
+            let new_letters: Vec<char> = word.chars().collect();
+            result.extend(self.find_next(&rem_words, &new_letters, nbr_idx));
+        }
+        result
     }
-
-    if ((i + w + 1) < size) & ((i + 1) % w != 0) {
-        neighbors.push(i + w + 1); //southeast
-    }
-
-    neighbors
 }
 
 fn main() {
     let args = Args::parse();
 
-    let board = parse_board(&args.letters);
+    let board = Board::parse_flat_board(&args.letters, 6, 8);
     println!("{:?}", board);
 
     let words = fs::read_to_string(args.dictionary_file).expect("Unable to read file");
@@ -103,106 +162,65 @@ fn main() {
         .collect();
     valid_words.sort_unstable();
     valid_words.dedup();
+
+    let all_words_that_fit = board.find_valid_words_from_start(0, &valid_words);
+    println!("{:?}", all_words_that_fit);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use test::Bencher;
-
-    #[test]
-    fn test_parse_board() {
-        let letters = "olwish heucbl sykoda ecpeny sheyub ranngm ormora hscksh";
-        let want = [
-            ['o', 'l', 'w', 'i', 's', 'h'],
-            ['h', 'e', 'u', 'c', 'b', 'l'],
-            ['s', 'y', 'k', 'o', 'd', 'a'],
-            ['e', 'c', 'p', 'e', 'n', 'y'],
-            ['s', 'h', 'e', 'y', 'u', 'b'],
-            ['r', 'a', 'n', 'n', 'g', 'm'],
-            ['o', 'r', 'm', 'o', 'r', 'a'],
-            ['h', 's', 'c', 'k', 's', 'h'],
-        ];
-
-        let got = parse_board(letters);
-        assert_eq!(want, got);
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_parse_board_bad1() {
-        // Note that the first group has one more letter than it should
-        let letters = "olwishd heucbl sykoda ecpeny sheyub ranngm ormora hscksh";
-        let want = [
-            ['o', 'l', 'w', 'i', 's', 'h'],
-            ['h', 'e', 'u', 'c', 'b', 'l'],
-            ['s', 'y', 'k', 'o', 'd', 'a'],
-            ['e', 'c', 'p', 'e', 'n', 'y'],
-            ['s', 'h', 'e', 'y', 'u', 'b'],
-            ['r', 'a', 'n', 'n', 'g', 'm'],
-            ['o', 'r', 'm', 'o', 'r', 'a'],
-            ['h', 's', 'c', 'k', 's', 'h'],
-        ];
-
-        let got = parse_board(letters);
-        assert_eq!(want, got);
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_parse_board_bad2() {
-        // Note that the first group has one more letter than it should
-        let letters = "olwish heucbl sykoda ecpeny sheyub ranngm ormora hscksh abcdef";
-        let want = [
-            ['o', 'l', 'w', 'i', 's', 'h'],
-            ['h', 'e', 'u', 'c', 'b', 'l'],
-            ['s', 'y', 'k', 'o', 'd', 'a'],
-            ['e', 'c', 'p', 'e', 'n', 'y'],
-            ['s', 'h', 'e', 'y', 'u', 'b'],
-            ['r', 'a', 'n', 'n', 'g', 'm'],
-            ['o', 'r', 'm', 'o', 'r', 'a'],
-            ['h', 's', 'c', 'k', 's', 'h'],
-        ];
-
-        let got = parse_board(letters);
-        assert_eq!(want, got);
-    }
+    use rstest::rstest;
 
     #[test]
     fn test_parse_flat_board() {
         let letters = "olwish heucbl sykoda ecpeny sheyub ranngm ormora hscksh";
-        let want: Vec<char> = letters.replace(" ", "").chars().collect();
-        let got = parse_flat_board(letters).to_vec();
+        let want_letters: Vec<char> = letters.replace(" ", "").chars().collect();
+        let want = Board {
+            letters: want_letters,
+            w: 6,
+            h: 8,
+        };
+        let got = Board::parse_flat_board(letters, 6, 8);
 
         assert_eq!(want, got);
     }
 
-    #[test]
-    fn test_get_neighbors() {
-        let want = vec![
-            vec![1, 3, 4],
-            vec![0, 2, 4, 3, 5],
-            vec![1, 5, 4],
-            vec![0, 4, 6, 1, 7],
-            vec![1, 3, 5, 7, 0, 2, 6, 8],
-            vec![2, 4, 8, 1, 7],
-            vec![3, 7, 4],
-            vec![4, 6, 8, 3, 5],
-            vec![5, 7, 4],
+    #[rstest]
+    #[case(0, vec![1, 3, 4])]
+    #[case(1, vec![0, 2, 4, 3, 5])]
+    #[case(2, vec![1, 5, 4])]
+    #[case(3, vec![0, 4, 6, 1, 7])]
+    #[case(4, vec![1, 3, 5, 7, 0, 2, 6, 8])]
+    #[case(5, vec![2, 4, 8, 1, 7])]
+    #[case(6, vec![3, 7, 4])]
+    #[case(7, vec![4, 6, 8, 3, 5])]
+    #[case(8, vec![5, 7, 4])]
+    fn test_get_neighbors(#[case] idx: usize, #[case] want: Vec<usize>) {
+        let board = Board::parse_flat_board("abc def ghi", 3, 3);
+        let got = board.get_neighbors(idx);
+        assert_eq!(want, got);
+    }
+
+    #[rstest]
+    #[case(0, vec!["talon"])]
+    #[case(1, vec!["argon"])]
+    #[case(2, vec!["lose","long"])]
+    #[case(3, vec!["rage"])]
+    #[case(4, vec![])]
+    #[case(5, vec!["ogre"])]
+    #[case(6, vec!["ergo"])]
+    #[case(7, vec!["solar"])]
+    #[case(8, vec!["nose"])]
+    fn test_find_valid_words_from_start_small(#[case] start_point: usize, #[case] want: Vec<&str>) {
+        let board = Board::parse_flat_board("tal rgo esn", 3, 3);
+
+        let words = vec![
+            "talon", "ogre", "sunny", "batch", "solar", "argon", "ergo", "lose", "long", "rage",
         ];
-        for idx in 0..9 {
-            let got = get_neighbors(idx, 3, 3);
-            assert_eq!(want[idx], got, "failed for index {}", idx);
-        }
-    }
 
-    #[bench]
-    fn bench_get_neighbors_3x3(b: &mut Bencher) {
-        b.iter(|| get_neighbors(4, 3, 3));
-    }
+        let got = board.find_valid_words_from_start(start_point, &words);
 
-    #[bench]
-    fn bench_get_neighbors_8x6(b: &mut Bencher) {
-        b.iter(|| get_neighbors(4, 6, 8));
+        assert_eq!(want, got);
     }
 }
