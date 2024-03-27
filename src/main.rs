@@ -95,10 +95,14 @@ impl Board {
         let mut result = Vec::new();
 
         let start_letter = [self.letters[start_point]];
+        let new_words: Vec<&str> = words
+            .iter()
+            .filter(|w| w.starts_with(start_letter))
+            .copied()
+            .collect();
+        dbg!(&new_words);
 
-        for nbr_idx in self.get_neighbors(start_point) {
-            result.extend(self.find_next(words, &start_letter, nbr_idx));
-        }
+        result.extend(self.find_next(&new_words, &start_letter, start_point));
         result
     }
 
@@ -116,12 +120,15 @@ impl Board {
 
         // Otherwise, loop over the neighbors, and return the results
         let mut result = Vec::new();
-        for nbr_idx in self.get_neighbors(current_board_position) {
+        let nbr_inds = self.get_neighbors(current_board_position);
+        dbg!(&nbr_inds);
+        for nbr_idx in nbr_inds {
             // What word is created by adding this neighbor?
             let word: String = vec![start_letters, &[self.letters[nbr_idx]]]
                 .iter()
                 .flat_map(|v| v.iter())
                 .collect();
+            dbg!(&word);
 
             // If adding this neighbor makes a complete word, push to result
             if words.contains(&&word.as_str()) {
@@ -129,6 +136,7 @@ impl Board {
             }
 
             // What words are left for this word?
+            dbg!(&words);
             let rem_words: Vec<&str> = words
                 .iter()
                 .filter(|w| w.starts_with(&word))
@@ -137,7 +145,8 @@ impl Board {
 
             // Quit if none left
             if rem_words.is_empty() {
-                return vec![];
+                println!("empty after filtering for {}", word);
+                continue;
             }
 
             // Call again from this neighbor position and push to the the result
@@ -212,11 +221,12 @@ mod tests {
     #[case(6, vec!["ergo"])]
     #[case(7, vec!["solar"])]
     #[case(8, vec!["nose"])]
-    fn test_find_valid_words_from_start_small(#[case] start_point: usize, #[case] want: Vec<&str>) {
+    fn test_find_valid_words_from_start(#[case] start_point: usize, #[case] want: Vec<&str>) {
         let board = Board::parse_flat_board("tal rgo esn", 3, 3);
 
         let words = vec![
             "talon", "ogre", "sunny", "batch", "solar", "argon", "ergo", "lose", "long", "rage",
+            "tart",
         ];
 
         let got = board.find_valid_words_from_start(start_point, &words);
