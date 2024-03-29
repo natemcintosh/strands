@@ -94,15 +94,14 @@ impl Board {
     ) -> Vec<String> {
         let mut result = Vec::new();
 
-        let start_letter = [self.letters[start_point]];
+        let start_spot = [start_point];
         let new_words: Vec<&str> = words
             .iter()
-            .filter(|w| w.starts_with(start_letter))
+            .filter(|w| w.starts_with(self.letters[start_point]))
             .copied()
             .collect();
-        dbg!(&new_words);
 
-        result.extend(self.find_next(&new_words, &start_letter, start_point));
+        result.extend(self.find_next(&new_words, &start_spot, start_point));
         result
     }
 
@@ -110,7 +109,7 @@ impl Board {
     fn find_next<'a>(
         &self,
         words: &[&'a str],
-        start_letters: &[char],
+        start_spots: &[usize],
         current_board_position: usize,
     ) -> Vec<String> {
         // If no more words, end
@@ -121,14 +120,13 @@ impl Board {
         // Otherwise, loop over the neighbors, and return the results
         let mut result = Vec::new();
         let nbr_inds = self.get_neighbors(current_board_position);
-        dbg!(&nbr_inds);
         for nbr_idx in nbr_inds {
+            // If this letter is already seen in the `start_spots`, continue
+            if start_spots.contains(&nbr_idx) {
+                continue;
+            }
             // What word is created by adding this neighbor?
-            let word: String = vec![start_letters, &[self.letters[nbr_idx]]]
-                .iter()
-                .flat_map(|v| v.iter())
-                .collect();
-            dbg!(&word);
+            let word = self.make_word_from_inds(start_spots, nbr_idx);
 
             // If adding this neighbor makes a complete word, push to result
             if words.contains(&&word.as_str()) {
@@ -136,7 +134,6 @@ impl Board {
             }
 
             // What words are left for this word?
-            dbg!(&words);
             let rem_words: Vec<&str> = words
                 .iter()
                 .filter(|w| w.starts_with(&word))
@@ -145,15 +142,21 @@ impl Board {
 
             // Quit if none left
             if rem_words.is_empty() {
-                println!("empty after filtering for {}", word);
                 continue;
             }
 
             // Call again from this neighbor position and push to the the result
-            let new_letters: Vec<char> = word.chars().collect();
-            result.extend(self.find_next(&rem_words, &new_letters, nbr_idx));
+            let mut new_spots: Vec<usize> = start_spots.iter().copied().collect();
+            new_spots.push(nbr_idx);
+            result.extend(self.find_next(&rem_words, &new_spots, nbr_idx));
         }
         result
+    }
+
+    fn make_word_from_inds(&self, inds_so_far: &[usize], new_ind: usize) -> String {
+        let mut word: String = inds_so_far.iter().map(|idx| self.letters[*idx]).collect();
+        word.push(self.letters[new_ind]);
+        word
     }
 }
 
@@ -161,19 +164,27 @@ fn main() {
     let args = Args::parse();
 
     let board = Board::parse_flat_board(&args.letters, 6, 8);
-    println!("{:?}", board);
 
     let words = fs::read_to_string(args.dictionary_file).expect("Unable to read file");
     let mut valid_words: Vec<&str> = words
         .lines()
         .filter(|s| !s.contains(char::is_uppercase))
         .filter(|&w| !w.ends_with("'s"))
+        .filter(|&w| w.len() >= 4)
         .collect();
     valid_words.sort_unstable();
     valid_words.dedup();
 
-    let all_words_that_fit = board.find_valid_words_from_start(0, &valid_words);
-    println!("{:?}", all_words_that_fit);
+    let filter_start = std::time::Instant::now();
+    let all_words_that_fit: Vec<Vec<String>> = (0..6 * 8)
+        .into_iter()
+        .map(|start_point| board.find_valid_words_from_start(start_point, &valid_words))
+        .collect();
+    let filter_time = filter_start.elapsed().as_millis();
+    println!("Filtering words for all spots took {}ms", filter_time);
+    for start_pt in all_words_that_fit {
+        println!("{:?}", start_pt);
+    }
 }
 
 #[cfg(test)]
@@ -214,7 +225,7 @@ mod tests {
     #[rstest]
     #[case(0, vec!["talon"])]
     #[case(1, vec!["argon"])]
-    #[case(2, vec!["lose","long"])]
+    #[case(2, vec!["long","lose"])]
     #[case(3, vec!["rage"])]
     #[case(4, vec![])]
     #[case(5, vec!["ogre"])]
@@ -226,10 +237,11 @@ mod tests {
 
         let words = vec![
             "talon", "ogre", "sunny", "batch", "solar", "argon", "ergo", "lose", "long", "rage",
-            "tart",
+            "tart", "nose",
         ];
 
-        let got = board.find_valid_words_from_start(start_point, &words);
+        let mut got = board.find_valid_words_from_start(start_point, &words);
+        got.sort_unstable();
 
         assert_eq!(want, got);
     }
