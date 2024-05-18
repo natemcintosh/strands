@@ -80,7 +80,7 @@ impl Board {
         }
 
         if ((i + self.w + 1) < size) & ((i + 1) % self.w != 0) {
-            neighbors.push(i + self.w + 1); //southeast
+            neighbors.push(i + self.w + 1); // southeast
         }
 
         neighbors
