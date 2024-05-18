@@ -91,10 +91,10 @@ impl Board {
         &self,
         start_point: usize,
         words: &[&str],
-    ) -> Vec<String> {
-        let mut result: Vec<String> = Vec::new();
+    ) -> Vec<(String, Vec<usize>)> {
+        let mut result: Vec<(String, Vec<usize>)> = Vec::new();
 
-        let start_spot = [start_point];
+        let start_spot = vec![start_point];
         let new_words: Vec<&str> = words
             .iter()
             .filter(|w| w.starts_with(self.letters[start_point]))
@@ -111,7 +111,7 @@ impl Board {
         words: &[&str],
         start_spots: &[usize],
         current_board_position: usize,
-    ) -> Vec<String> {
+    ) -> Vec<(String, Vec<usize>)> {
         // If no more words, end
         if words.is_empty() {
             return vec![];
@@ -130,7 +130,9 @@ impl Board {
 
             // If adding this neighbor makes a complete word, push to result
             if words.contains(&word.as_str()) {
-                result.push(word.clone());
+                let mut positions = start_spots.to_vec();
+                positions.push(nbr_idx);
+                result.push((word.clone(), positions));
             }
 
             // What words are left for this word?
@@ -161,6 +163,88 @@ impl Board {
     }
 }
 
+/// This takes a collection of words, paired with the indices they live at, and finds
+/// the combination of words that covers the most of the board, while not covering
+/// each other.
+fn combo_with_most_coverage(
+    words_that_fit: &[Vec<(String, Vec<usize>)>],
+) -> Vec<(String, Vec<usize>)> {
+    // Helper function to check if a word overlaps with any existing words in the current combo
+    fn overlaps(existing: &[usize], new_indices: &Vec<usize>) -> bool {
+        for &index in new_indices {
+            if existing.contains(&index) {
+                return true; // Overlap found
+            }
+        }
+        false
+    }
+
+    // Recursive function to find the best combination
+    fn find_best_combo(
+        words_that_fit: &[Vec<(String, Vec<usize>)>],
+        current_combo: &mut Vec<(String, Vec<usize>)>,
+        best_combo: &mut Vec<(String, Vec<usize>)>,
+        covered_indices: &mut Vec<usize>,
+        start_idx: usize,
+    ) {
+        // If we have reached the end of the list, check if the current combo is the best one
+        if start_idx >= words_that_fit.len() {
+            if covered_indices.len() > best_combo.iter().flat_map(|(_, indices)| indices).count() {
+                best_combo.clone_from(current_combo);
+            }
+            return;
+        }
+
+        // Try each word in the current position
+        for (word, indices) in &words_that_fit[start_idx] {
+            if !overlaps(covered_indices, indices) {
+                // Add this word to the current combo
+                current_combo.push((word.clone(), indices.clone()));
+                covered_indices.extend(indices.iter());
+
+                // Recur to find the next word
+                find_best_combo(
+                    words_that_fit,
+                    current_combo,
+                    best_combo,
+                    covered_indices,
+                    start_idx + 1,
+                );
+
+                // Backtrack
+                current_combo.pop();
+                for index in indices {
+                    covered_indices.retain(|&x| x != *index);
+                }
+            }
+            println!("{start_idx}");
+        }
+
+        // Also consider the case where we skip the current position
+        find_best_combo(
+            words_that_fit,
+            current_combo,
+            best_combo,
+            covered_indices,
+            start_idx + 1,
+        );
+    }
+
+    let mut best_combo = Vec::new();
+    let mut current_combo = Vec::new();
+    let mut covered_indices = Vec::new();
+
+    find_best_combo(
+        words_that_fit,
+        &mut current_combo,
+        &mut best_combo,
+        &mut covered_indices,
+        0,
+    );
+
+    best_combo
+}
+
 fn main() {
     let args = Args::parse();
 
@@ -177,13 +261,18 @@ fn main() {
     valid_words.dedup();
 
     let filter_start = std::time::Instant::now();
-    let all_words_that_fit: Vec<Vec<String>> = (0..6 * 8)
+    let all_words_that_fit: Vec<Vec<(String, Vec<usize>)>> = (0..6 * 8)
         .map(|start_point| board.find_valid_words_from_start(start_point, &valid_words))
         .collect();
     let filter_time = filter_start.elapsed().as_millis();
     println!("Filtering words for all spots took {filter_time}ms");
-    for start_pt in all_words_that_fit {
-        println!("{start_pt:?}");
+    println!(
+        "Found {} possible words",
+        all_words_that_fit.iter().flatten().count()
+    );
+    let best_answer = combo_with_most_coverage(&all_words_that_fit);
+    for (word, _) in &best_answer {
+        println!("{word}");
     }
 }
 
@@ -223,26 +312,61 @@ mod tests {
     }
 
     #[rstest]
-    #[case(0, vec!["talon"])]
-    #[case(1, vec!["argon"])]
-    #[case(2, vec!["long","lose"])]
-    #[case(3, vec!["rage"])]
-    #[case(4, vec![])]
-    #[case(5, vec!["ogre"])]
-    #[case(6, vec!["ergo"])]
-    #[case(7, vec!["solar"])]
-    #[case(8, vec!["nose"])]
-    fn test_find_valid_words_from_start(#[case] start_point: usize, #[case] want: Vec<&str>) {
+    #[case(0, vec![("talon".to_string(), vec![0, 1, 2, 5, 8])])]
+    #[case(1, vec![("argon".to_string(), vec![1, 3, 4, 5, 8])])]
+    #[case(2, vec![("long".to_string(), vec![2, 5, 8, 4]), ("lose".to_string(), vec![2, 5, 7,6])])]
+    #[case(3, vec![("rage".to_string(), vec![3, 1, 4, 6])])]
+    #[case(4, vec![("glare".to_string(), vec![4, 2, 1, 3, 6])])]
+    #[case(5, vec![("ogre".to_string(), vec![5, 4, 3, 6])])]
+    #[case(6, vec![("ergo".to_string(), vec![6, 3, 4, 5])])]
+    #[case(7, vec![("solar".to_string(), vec![7, 5, 2, 1, 3])])]
+    #[case(8, vec![("nose".to_string(), vec![8, 5, 7, 6])])]
+    fn test_find_valid_words_from_start(
+        #[case] start_point: usize,
+        #[case] want: Vec<(String, Vec<usize>)>,
+    ) {
         let board = Board::parse_flat_board("tal rgo esn", 3, 3);
 
         let words = vec![
             "talon", "ogre", "sunny", "batch", "solar", "argon", "ergo", "lose", "long", "rage",
-            "tart", "nose",
+            "tart", "nose", "glare",
         ];
 
         let mut got = board.find_valid_words_from_start(start_point, &words);
-        got.sort_unstable();
+        got.sort_unstable_by(|a, b| a.0.cmp(&b.0));
 
         assert_eq!(want, got);
+    }
+
+    #[test]
+    fn test_combo_with_most_coverage() {
+        let words_that_fit: Vec<Vec<(String, Vec<usize>)>> = vec![
+            vec![("talon".to_string(), vec![0, 1, 2, 5, 8])],
+            vec![("argon".to_string(), vec![1, 3, 4, 5, 8])],
+            vec![
+                ("long".to_string(), vec![2, 5, 8, 4]),
+                ("lose".to_string(), vec![2, 5, 7, 6]),
+            ],
+            vec![
+                ("rage".to_string(), vec![3, 1, 4, 6]),
+                ("regs".to_string(), vec![3, 6, 4, 7]),
+            ],
+            vec![("glare".to_string(), vec![4, 2, 1, 3, 6])],
+            vec![("ogre".to_string(), vec![5, 4, 3, 6])],
+            vec![("ergo".to_string(), vec![6, 3, 4, 5])],
+            vec![("solar".to_string(), vec![7, 5, 2, 1, 3])],
+            vec![("nose".to_string(), vec![8, 5, 7, 6])],
+        ];
+
+        let want: Vec<(String, Vec<usize>)> = vec![
+            ("talon".to_string(), vec![0, 1, 2, 5, 8]),
+            ("regs".to_string(), vec![3, 6, 4, 7]),
+        ];
+
+        let got = combo_with_most_coverage(&words_that_fit);
+
+        for (w, g) in want.iter().zip(got.iter()) {
+            assert_eq!(w, g);
+        }
     }
 }
