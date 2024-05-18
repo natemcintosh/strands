@@ -28,7 +28,7 @@ impl Board {
     fn parse_flat_board(letters: &str, width: usize, height: usize) -> Board {
         let mut bletters = Vec::with_capacity(width * height);
 
-        for c in letters.replace(" ", "").chars() {
+        for c in letters.replace(' ', "").chars() {
             bletters.push(c);
         }
 
@@ -43,7 +43,7 @@ impl Board {
     /// Gets diagonal neighbors too.
     ///
     /// Copied from
-    /// https://stackoverflow.com/questions/9355537/finding-neighbors-of-2d-array-when-represented-as-1d-array
+    /// <https://stackoverflow.com/questions/9355537/finding-neighbors-of-2d-array-when-represented-as-1d-array>
     ///
     /// Could perhaps write a version of this that takes in a mutable bit array, sets
     /// everything to zero, then sets the right ones to true.
@@ -87,12 +87,12 @@ impl Board {
     }
 
     /// From a given starting point on the board, what words can be formed?
-    fn find_valid_words_from_start<'a>(
+    fn find_valid_words_from_start(
         &self,
         start_point: usize,
-        words: &[&'a str],
+        words: &[&str],
     ) -> Vec<String> {
-        let mut result = Vec::new();
+        let mut result: Vec<String> = Vec::new();
 
         let start_spot = [start_point];
         let new_words: Vec<&str> = words
@@ -106,9 +106,9 @@ impl Board {
     }
 
     /// A recursive method for finding valid words
-    fn find_next<'a>(
+    fn find_next(
         &self,
-        words: &[&'a str],
+        words: &[&str],
         start_spots: &[usize],
         current_board_position: usize,
     ) -> Vec<String> {
@@ -129,7 +129,7 @@ impl Board {
             let word = self.make_word_from_inds(start_spots, nbr_idx);
 
             // If adding this neighbor makes a complete word, push to result
-            if words.contains(&&word.as_str()) {
+            if words.contains(&word.as_str()) {
                 result.push(word.clone());
             }
 
@@ -146,13 +146,14 @@ impl Board {
             }
 
             // Call again from this neighbor position and push to the the result
-            let mut new_spots: Vec<usize> = start_spots.iter().copied().collect();
+            let mut new_spots: Vec<usize> = start_spots.to_vec();
             new_spots.push(nbr_idx);
             result.extend(self.find_next(&rem_words, &new_spots, nbr_idx));
         }
         result
     }
 
+    /// Given a set of indices, create a new word from the letters at those indices
     fn make_word_from_inds(&self, inds_so_far: &[usize], new_ind: usize) -> String {
         let mut word: String = inds_so_far.iter().map(|idx| self.letters[*idx]).collect();
         word.push(self.letters[new_ind]);
@@ -177,13 +178,12 @@ fn main() {
 
     let filter_start = std::time::Instant::now();
     let all_words_that_fit: Vec<Vec<String>> = (0..6 * 8)
-        .into_iter()
         .map(|start_point| board.find_valid_words_from_start(start_point, &valid_words))
         .collect();
     let filter_time = filter_start.elapsed().as_millis();
-    println!("Filtering words for all spots took {}ms", filter_time);
+    println!("Filtering words for all spots took {filter_time}ms");
     for start_pt in all_words_that_fit {
-        println!("{:?}", start_pt);
+        println!("{start_pt:?}");
     }
 }
 
@@ -195,7 +195,7 @@ mod tests {
     #[test]
     fn test_parse_flat_board() {
         let letters = "olwish heucbl sykoda ecpeny sheyub ranngm ormora hscksh";
-        let want_letters: Vec<char> = letters.replace(" ", "").chars().collect();
+        let want_letters: Vec<char> = letters.replace(' ', "").chars().collect();
         let want = Board {
             letters: want_letters,
             w: 6,
