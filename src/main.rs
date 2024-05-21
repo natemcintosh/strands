@@ -1,6 +1,7 @@
 use std::fs;
 
 use clap::Parser;
+use itertools::Itertools;
 
 /// Simple program to greet a person
 #[derive(Parser, Debug)]
@@ -14,6 +15,14 @@ struct Args {
     /// The dictionary file to use. By default, use the american english dictionary file
     #[arg(short = 'd', long, default_value = "american_english_dictionary.txt")]
     dictionary_file: String,
+
+    /// Minimum number of words
+    #[arg()]
+    min_words: usize,
+
+    /// Maximum number of words
+    #[arg()]
+    max_words: usize,
 }
 
 #[derive(Debug, PartialEq)]
@@ -163,86 +172,94 @@ impl Board {
     }
 }
 
+/// Function to check if there is any overlap between the existing indices and new indices
+fn _bit_overlaps(existing: usize, new_indices: usize) -> bool {
+    existing & new_indices != 0
+}
+
+/// Function to convert a &[usize] to a single usize representing the bits
+fn indices_to_bits(indices: &[usize]) -> usize {
+    indices.iter().fold(0, |acc, &idx| acc | (1 << idx))
+}
+
+/// ORs together all of the usizes
+fn or_usize_slice(vals: impl Iterator<Item = usize>) -> usize {
+    vals.fold(0, |acc, x| acc | x)
+}
+
 /// This takes a collection of words, paired with the indices they live at, and finds
 /// the combination of words that covers the most of the board, while not covering
 /// each other.
 fn combo_with_most_coverage(
     words_that_fit: &[Vec<(String, Vec<usize>)>],
-) -> Vec<(String, Vec<usize>)> {
-    // Helper function to check if a word overlaps with any existing words in the current combo
-    fn overlaps(existing: &[usize], new_indices: &Vec<usize>) -> bool {
-        for &index in new_indices {
-            if existing.contains(&index) {
-                return true; // Overlap found
-            }
-        }
-        false
-    }
+    smallest_combo: usize,
+    largest_combo: usize,
+    board_w: usize,
+    board_h: usize,
+) -> Vec<(String, usize)> {
+    // Convert all the Vec<usize> into single usizes
+    let condensed_words: Vec<usize> = words_that_fit
+        .iter()
+        .flat_map(|start_point| {
+            start_point
+                .iter()
+                .map(|(_, indices)| indices_to_bits(indices))
+        })
+        .collect();
 
-    // Recursive function to find the best combination
-    fn find_best_combo(
-        words_that_fit: &[Vec<(String, Vec<usize>)>],
-        current_combo: &mut Vec<(String, Vec<usize>)>,
-        best_combo: &mut Vec<(String, Vec<usize>)>,
-        covered_indices: &mut Vec<usize>,
-        start_idx: usize,
-    ) {
-        // If we have reached the end of the list, check if the current combo is the best one
-        if start_idx >= words_that_fit.len() {
-            if covered_indices.len() > best_combo.iter().flat_map(|(_, indices)| indices).count() {
-                best_combo.clone_from(current_combo);
-            }
-            return;
-        }
+    // Get just the string out
+    let flattened_words_that_fit: Vec<String> = words_that_fit
+        .iter()
+        .flat_map(|start_point| start_point.iter().map(|(word, _)| word.clone()))
+        .collect();
 
-        // Try each word in the current position
-        for (word, indices) in &words_that_fit[start_idx] {
-            if !overlaps(covered_indices, indices) {
-                // Add this word to the current combo
-                current_combo.push((word.clone(), indices.clone()));
-                covered_indices.extend(indices.iter());
+    println!("There are {} total words", condensed_words.len());
 
-                // Recur to find the next word
-                find_best_combo(
-                    words_that_fit,
-                    current_combo,
-                    best_combo,
-                    covered_indices,
-                    start_idx + 1,
-                );
+    let mut best_yet: Vec<(String, usize)> = Vec::new();
+    // For all possible combinations from length `smallest_combo` to `largest_combo`
+    for combo_len in smallest_combo..=largest_combo {
+        println!("Examing combinations of length {combo_len}");
 
-                // Backtrack
-                current_combo.pop();
-                for index in indices {
-                    covered_indices.retain(|&x| x != *index);
+        // For each possible combination
+        condensed_words
+            .iter()
+            .enumerate()
+            .combinations(combo_len)
+            // Filter out ones with overlap, and the ones that don't cover the whole
+            // board. To cover the whole board, it should cover all numbers between
+            // 0 and (board_w * board_h) - 1
+            .filter(|words| {
+                let mut res = 0;
+                for (_, w) in words {
+                    if res & *w != 0 {
+                        // overlapping words, filter out
+                        return false;
+                    }
+                    res |= *w;
                 }
-            }
-            println!("{start_idx}");
-        }
+                // Calculate the full coverage mask
+                let full_coverage = (1 << (board_w * board_h)) - 1;
+                // Check if the combination covers the whole board
+                res == full_coverage
+            })
+            // See if this one is better than best yet, and if so, replace best yet with it
+            .for_each(|words| {
+                // Count how many ones in the positions usize
+                let n_covered: usize = or_usize_slice(words.iter().map(|(_, &position)| position));
 
-        // Also consider the case where we skip the current position
-        find_best_combo(
-            words_that_fit,
-            current_combo,
-            best_combo,
-            covered_indices,
-            start_idx + 1,
-        );
+                // If it covers more than `best_yet`, it becomes the new best yet
+                if n_covered > best_yet.iter().map(|(_, covers)| covers).sum() {
+                    // Get the strings at the indices, and zip them with the coverage for that word
+                    best_yet = words
+                        .iter()
+                        .map(|(idx, cover)| (flattened_words_that_fit[*idx].clone(), **cover))
+                        .collect();
+                    println!("New best is {:?}", &best_yet);
+                }
+            });
     }
 
-    let mut best_combo = Vec::new();
-    let mut current_combo = Vec::new();
-    let mut covered_indices = Vec::new();
-
-    find_best_combo(
-        words_that_fit,
-        &mut current_combo,
-        &mut best_combo,
-        &mut covered_indices,
-        0,
-    );
-
-    best_combo
+    best_yet
 }
 
 fn main() {
@@ -270,7 +287,9 @@ fn main() {
         "Found {} possible words",
         all_words_that_fit.iter().flatten().count()
     );
-    let best_answer = combo_with_most_coverage(&all_words_that_fit);
+    let best_answer =
+        combo_with_most_coverage(&all_words_that_fit, args.min_words, args.max_words, 6, 8);
+    println!("Best combination of words is:");
     for (word, _) in &best_answer {
         println!("{word}");
     }
@@ -358,15 +377,34 @@ mod tests {
             vec![("nose".to_string(), vec![8, 5, 7, 6])],
         ];
 
-        let want: Vec<(String, Vec<usize>)> = vec![
-            ("talon".to_string(), vec![0, 1, 2, 5, 8]),
-            ("regs".to_string(), vec![3, 6, 4, 7]),
+        let want: Vec<(String, usize)> = vec![
+            ("talon".to_string(), indices_to_bits(&[0, 1, 2, 5, 8])),
+            ("regs".to_string(), indices_to_bits(&[3, 6, 4, 7])),
         ];
 
-        let got = combo_with_most_coverage(&words_that_fit);
+        let got = combo_with_most_coverage(&words_that_fit, 1, 3, 3, 3);
 
         for (w, g) in want.iter().zip(got.iter()) {
+            dbg!(&w, &g);
             assert_eq!(w, g);
         }
+    }
+
+    #[rstest]
+    #[case(0b0000, 0b0000, false)] // both empty
+    #[case(0b0001, 0b0010, false)] // ones in different places
+    #[case(0b0010, 0b0010, true)] // direct overlap
+    #[case(0b1100, 0b0011, false)] // ones in different places
+    #[case(0b1100, 0b0100, true)] // one overlap
+    #[case(0b1010, 0b1001, true)] // one overlap
+    #[case(0b1111, 0b0000, false)] // all of one or the other
+    #[case(0b1111, 0b1111, true)] // all ones all the way
+    fn test_bit_overlaps(
+        #[case] existing: usize,
+        #[case] new_indices: usize,
+        #[case] expected: bool,
+    ) {
+        let result = _bit_overlaps(existing, new_indices);
+        assert_eq!(result, expected);
     }
 }
