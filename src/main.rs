@@ -1,7 +1,6 @@
 use std::fs;
 
 use clap::Parser;
-use itertools::Itertools;
 
 /// Simple program to greet a person
 #[derive(Parser, Debug)]
@@ -182,21 +181,12 @@ fn indices_to_bits(indices: &[usize]) -> usize {
     indices.iter().fold(0, |acc, &idx| acc | (1 << idx))
 }
 
-/// ORs together all of the usizes
-fn or_usize_slice(vals: impl Iterator<Item = usize>) -> usize {
-    vals.fold(0, |acc, x| acc | x)
-}
-
-/// This takes a collection of words, paired with the indices they live at, and finds
-/// the combination of words that covers the most of the board, while not covering
-/// each other.
-fn combo_with_most_coverage(
+fn solve(
     words_that_fit: &[Vec<(String, Vec<usize>)>],
-    smallest_combo: usize,
-    largest_combo: usize,
+    max_len: usize,
     board_w: usize,
     board_h: usize,
-) -> Vec<(String, usize)> {
+) -> Vec<String> {
     // Convert all the Vec<usize> into single usizes
     let condensed_words: Vec<usize> = words_that_fit
         .iter()
@@ -213,53 +203,72 @@ fn combo_with_most_coverage(
         .flat_map(|start_point| start_point.iter().map(|(word, _)| word.clone()))
         .collect();
 
-    println!("There are {} total words", condensed_words.len());
+    // Assume that these two are the same length
+    assert_eq!(condensed_words.len(), flattened_words_that_fit.len());
 
-    let mut best_yet: Vec<(String, usize)> = Vec::new();
-    // For all possible combinations from length `smallest_combo` to `largest_combo`
-    for combo_len in smallest_combo..=largest_combo {
-        println!("Examing combinations of length {combo_len}");
+    // Solver
+    let mut selected_blocks: Vec<usize> = vec![];
+    let inds = inner_solve(
+        0usize,
+        &condensed_words,
+        &mut selected_blocks,
+        max_len,
+        board_w,
+        board_h,
+    )
+    .expect("Could not find a solution");
 
-        // For each possible combination
-        condensed_words
-            .iter()
-            .enumerate()
-            .combinations(combo_len)
-            // Filter out ones with overlap, and the ones that don't cover the whole
-            // board. To cover the whole board, it should cover all numbers between
-            // 0 and (board_w * board_h) - 1
-            .filter(|words| {
-                let mut res = 0;
-                for (_, w) in words {
-                    if res & *w != 0 {
-                        // overlapping words, filter out
-                        return false;
-                    }
-                    res |= *w;
-                }
-                // Calculate the full coverage mask
-                let full_coverage = (1 << (board_w * board_h)) - 1;
-                // Check if the combination covers the whole board
-                res == full_coverage
-            })
-            // See if this one is better than best yet, and if so, replace best yet with it
-            .for_each(|words| {
-                // Count how many ones in the positions usize
-                let n_covered: usize = or_usize_slice(words.iter().map(|(_, &position)| position));
+    // Get the words from the indices
+    condensed_words
+        .iter()
+        .zip(flattened_words_that_fit.iter())
+        .filter(|(ind, _)| inds.contains(ind))
+        .map(|(_, word)| word.clone())
+        .collect()
+}
 
-                // If it covers more than `best_yet`, it becomes the new best yet
-                if n_covered > best_yet.iter().map(|(_, covers)| covers).sum() {
-                    // Get the strings at the indices, and zip them with the coverage for that word
-                    best_yet = words
-                        .iter()
-                        .map(|(idx, cover)| (flattened_words_that_fit[*idx].clone(), **cover))
-                        .collect();
-                    println!("New best is {:?}", &best_yet);
-                }
-            });
+fn inner_solve(
+    board: usize,
+    blocks: &[usize],
+    selected_blocks: &mut Vec<usize>,
+    max_len: usize,
+    board_w: usize,
+    board_h: usize,
+) -> Option<Vec<usize>> {
+    for (idx, block) in blocks.iter().enumerate() {
+        // If this block can be placed
+        if (block & board) == 0 {
+            // Place the block
+            let new_board = block | board;
+            selected_blocks.push(*block);
+
+            // If we've filled the board
+            if new_board.count_ones() as usize == (board_h * board_w) {
+                return Some(selected_blocks.clone());
+            }
+
+            // If we're at max len, we haven't yet filled the board. Skip to next word
+            if selected_blocks.len() == max_len {
+                continue;
+            }
+
+            // Try to add another block
+            if let Some(res) = inner_solve(
+                new_board,
+                &blocks[idx + 1..],
+                selected_blocks,
+                max_len,
+                board_w,
+                board_h,
+            ) {
+                return Some(res);
+            }
+
+            // Backtrack
+            selected_blocks.pop();
+        }
     }
-
-    best_yet
+    None
 }
 
 fn main() {
@@ -278,7 +287,7 @@ fn main() {
     valid_words.dedup();
 
     let filter_start = std::time::Instant::now();
-    let all_words_that_fit: Vec<Vec<(String, Vec<usize>)>> = (0..6 * 8)
+    let all_words_that_fit: Vec<Vec<(String, Vec<usize>)>> = (0..(6 * 8))
         .map(|start_point| board.find_valid_words_from_start(start_point, &valid_words))
         .collect();
     let filter_time = filter_start.elapsed().as_millis();
@@ -287,12 +296,14 @@ fn main() {
         "Found {} possible words",
         all_words_that_fit.iter().flatten().count()
     );
-    let best_answer =
-        combo_with_most_coverage(&all_words_that_fit, args.min_words, args.max_words, 6, 8);
-    println!("Best combination of words is:");
-    for (word, _) in &best_answer {
-        println!("{word}");
-    }
+
+    // Find the solution
+    let solve_start_time = std::time::Instant::now();
+    let solution = solve(&all_words_that_fit, args.max_words, 6, 8);
+    println!("\n\nFound solution!");
+    println!("{:?}", solution);
+    let solve_time = solve_start_time.elapsed().as_secs_f64();
+    println!("Solve took {solve_time:0.2}s");
 }
 
 #[cfg(test)]
@@ -358,7 +369,7 @@ mod tests {
     }
 
     #[test]
-    fn test_combo_with_most_coverage() {
+    fn test_solve() {
         let words_that_fit: Vec<Vec<(String, Vec<usize>)>> = vec![
             vec![("talon".to_string(), vec![0, 1, 2, 5, 8])],
             vec![("argon".to_string(), vec![1, 3, 4, 5, 8])],
@@ -382,11 +393,11 @@ mod tests {
             ("regs".to_string(), indices_to_bits(&[3, 6, 4, 7])),
         ];
 
-        let got = combo_with_most_coverage(&words_that_fit, 1, 3, 3, 3);
+        let got = solve(&words_that_fit, 2, 3, 3);
 
         for (w, g) in want.iter().zip(got.iter()) {
             dbg!(&w, &g);
-            assert_eq!(w, g);
+            assert_eq!(w.0, *g);
         }
     }
 
