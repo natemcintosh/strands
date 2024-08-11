@@ -1,6 +1,7 @@
 use std::fs;
 
 use clap::Parser;
+use smallvec::{smallvec, SmallVec};
 
 /// Simple program to greet a person
 #[derive(Parser, Debug)]
@@ -172,7 +173,7 @@ impl Board {
 }
 
 /// Function to check if there is any overlap between the existing indices and new indices
-fn _bit_overlaps(existing: usize, new_indices: usize) -> bool {
+fn bit_overlaps(existing: usize, new_indices: usize) -> bool {
     existing & new_indices != 0
 }
 
@@ -207,7 +208,7 @@ fn solve(
     assert_eq!(condensed_words.len(), flattened_words_that_fit.len());
 
     // Solver
-    let mut selected_blocks: Vec<usize> = vec![];
+    let mut selected_blocks: SmallVec<[usize; 12]> = smallvec![];
     let inds = inner_solve(
         0usize,
         &condensed_words,
@@ -219,25 +220,28 @@ fn solve(
     .expect("Could not find a solution");
 
     // Get the words from the indices
-    condensed_words
-        .iter()
-        .zip(flattened_words_that_fit.iter())
-        .filter(|(ind, _)| inds.contains(ind))
-        .map(|(_, word)| word.clone())
+    inds.iter()
+        .filter_map(|ind| condensed_words.iter().position(|x| x == ind))
+        .map(|ind| flattened_words_that_fit[ind].clone())
         .collect()
 }
 
 fn inner_solve(
     board: usize,
     blocks: &[usize],
-    selected_blocks: &mut Vec<usize>,
+    selected_blocks: &mut SmallVec<[usize; 12]>,
     max_len: usize,
     board_w: usize,
     board_h: usize,
-) -> Option<Vec<usize>> {
+) -> Option<SmallVec<[usize; 12]>> {
+    // If we already have too many blocks, skips
+    if selected_blocks.len() >= max_len {
+        return None;
+    }
+
     for (idx, block) in blocks.iter().enumerate() {
         // If this block can be placed
-        if (block & board) == 0 {
+        if !bit_overlaps(*block, board) && no_diagonal_overlap(*block, board, board_w, board_h) {
             // Place the block
             let new_board = block | board;
             selected_blocks.push(*block);
@@ -247,8 +251,10 @@ fn inner_solve(
                 return Some(selected_blocks.clone());
             }
 
-            // If we're at max len, we haven't yet filled the board. Skip to next word
-            if selected_blocks.len() == max_len {
+            // If we're at max len, we haven't yet filled the board. Remove the block
+            // and skip to next word
+            if selected_blocks.len() >= max_len {
+                selected_blocks.pop();
                 continue;
             }
 
@@ -269,6 +275,76 @@ fn inner_solve(
         }
     }
     None
+}
+
+fn no_diagonal_overlap(block: usize, board: usize, board_w: usize, board_h: usize) -> bool {
+    // Convert the block and board to sets of indices
+    let block_indices = bits_to_indices(block, board_w, board_h);
+    let board_indices = bits_to_indices(board, board_w, board_h);
+
+    if board_indices.is_empty() {
+        return true;
+    }
+    !crosses_existing_lines(&board_indices, &block_indices, board_w)
+}
+
+fn bits_to_indices(bits: usize, board_w: usize, board_h: usize) -> Vec<usize> {
+    (0..(board_w * board_h))
+        .filter(|&i| bits & (1 << i) != 0)
+        .collect()
+}
+
+fn crosses_existing_lines(
+    existing_indices: &[usize],
+    new_block_indices: &[usize],
+    board_w: usize,
+) -> bool {
+    fn index_to_coords(index: usize, board_w: usize) -> (isize, isize) {
+        (
+            index as isize / board_w as isize,
+            index as isize % board_w as isize,
+        )
+    }
+
+    for i in 0..new_block_indices.len() - 1 {
+        let (x1, y1) = index_to_coords(new_block_indices[i], board_w);
+        let (x2, y2) = index_to_coords(new_block_indices[i + 1], board_w);
+
+        for j in 0..existing_indices.len() - 1 {
+            let (x3, y3) = index_to_coords(existing_indices[j], board_w);
+            let (x4, y4) = index_to_coords(existing_indices[j + 1], board_w);
+
+            // Check if line (x1, y1) to (x2, y2) intersects with line (x3, y3) to (x4, y4)
+            if lines_intersect((x1, y1), (x2, y2), (x3, y3), (x4, y4)) {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
+fn lines_intersect(
+    a1: (isize, isize),
+    a2: (isize, isize),
+    b1: (isize, isize),
+    b2: (isize, isize),
+) -> bool {
+    // Calculate the direction of the points
+    fn direction(a: (isize, isize), b: (isize, isize), c: (isize, isize)) -> isize {
+        (b.0 - a.0) * (c.1 - a.1) - (b.1 - a.1) * (c.0 - a.0)
+    }
+
+    let d1 = direction(a1, a2, b1);
+    let d2 = direction(a1, a2, b2);
+    let d3 = direction(b1, b2, a1);
+    let d4 = direction(b1, b2, a2);
+
+    if d1 != 0 && d2 != 0 && d3 != 0 && d4 != 0 {
+        return (d1 < 0 && d2 > 0 || d1 > 0 && d2 < 0) && (d3 < 0 && d4 > 0 || d3 > 0 && d4 < 0);
+    }
+
+    false
 }
 
 fn main() {
@@ -301,7 +377,7 @@ fn main() {
     let solve_start_time = std::time::Instant::now();
     let solution = solve(&all_words_that_fit, args.max_words, 6, 8);
     println!("\n\nFound solution!");
-    println!("{:?}", solution);
+    println!("{solution:?}");
     let solve_time = solve_start_time.elapsed().as_secs_f64();
     println!("Solve took {solve_time:0.2}s");
 }
@@ -368,6 +444,62 @@ mod tests {
         assert_eq!(want, got);
     }
 
+    #[rstest]
+    #[case(0b0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000, 6, 8, vec![])]
+    #[case(0b0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0001, 6, 8, vec![0])]
+    #[case(0b0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0011, 6, 8, vec![0, 1])]
+    #[case(0b0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0100, 6, 8, vec![2])]
+    #[case(0b0000_0000_0000_0000_0000_0000_0000_0000_0000_1000_0000_0000, 6, 8, vec![11])]
+    #[case(0b1111_1100_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000, 6, 8, vec![42, 43, 44, 45, 46, 47])]
+    #[case(0b0_0000_0000, 3, 3, vec![])]
+    #[case(0b0_0000_0001, 3, 3, vec![0])]
+    #[case(0b0_0000_0010, 3, 3, vec![1])]
+    #[case(0b0_0000_0100, 3, 3, vec![2])]
+    #[case(0b0_0000_1000, 3, 3, vec![3])]
+    #[case(0b0_0001_0000, 3, 3, vec![4])]
+    #[case(0b0_0010_0000, 3, 3, vec![5])]
+    #[case(0b0_0100_0000, 3, 3, vec![6])]
+    #[case(0b0_1000_0000, 3, 3, vec![7])]
+    #[case(0b1_0000_0000, 3, 3, vec![8])]
+    #[case(0b1_1111_1111, 3, 3, vec![0, 1, 2, 3, 4, 5, 6, 7, 8])]
+    #[case(0b1_0101_0101, 3, 3, vec![0, 2, 4, 6, 8])]
+    #[case(0b0_1010_1010, 3, 3, vec![1, 3, 5, 7])]
+    #[case(0b0_0100_1001, 3, 3, vec![0, 3, 6])]
+    #[case(0b1_1000_0000, 3, 3, vec![7, 8])]
+    fn test_bits_to_indices(
+        #[case] bits: usize,
+        #[case] board_w: usize,
+        #[case] board_h: usize,
+        #[case] expected: Vec<usize>,
+    ) {
+        let result = bits_to_indices(bits, board_w, board_h);
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case(vec![0, 1, 2, 3], vec![4, 5], 6, false)]
+    #[case(vec![0, 6], vec![1, 7], 6, false)]
+    #[case(vec![0, 1, 2], vec![4, 5], 6, false)]
+    #[case(vec![0, 1, 2], vec![6, 7, 8], 6, false)]
+    #[case(vec![0, 1, 2, 9], vec![6, 7, 8], 6, false)]
+    #[case(vec![0, 6, 1], vec![7, 8], 6, false)]
+    #[case(vec![0, 7], vec![1, 6], 6, true)]
+    #[case(vec![0, 7], vec![6, 1], 6, true)]
+    #[case(vec![0, 3, 4, 2], vec![1, 5, 8, 7, 6], 3, true)]
+    #[case(vec![0, 3, 7], vec![6, 4], 3, true)]
+    #[case(vec![1, 5], vec![2, 4], 3, true)]
+    #[case(vec![0, 4, 8], vec![1, 3], 3, true)]
+    #[case(vec![0, 4, 8], vec![1, 2], 3, false)]
+    fn test_crosses_existing_lines(
+        #[case] existing_indices: Vec<usize>,
+        #[case] new_block_indices: Vec<usize>,
+        #[case] board_w: usize,
+        #[case] expected: bool,
+    ) {
+        let result = crosses_existing_lines(&existing_indices, &new_block_indices, board_w);
+        assert_eq!(result, expected);
+    }
+
     #[test]
     fn test_solve() {
         let words_that_fit: Vec<Vec<(String, Vec<usize>)>> = vec![
@@ -388,17 +520,106 @@ mod tests {
             vec![("nose".to_string(), vec![8, 5, 7, 6])],
         ];
 
-        let want: Vec<(String, usize)> = vec![
-            ("talon".to_string(), indices_to_bits(&[0, 1, 2, 5, 8])),
-            ("regs".to_string(), indices_to_bits(&[3, 6, 4, 7])),
-        ];
+        let want: Vec<String> = vec!["talon".to_string(), "regs".to_string()];
 
         let got = solve(&words_that_fit, 2, 3, 3);
 
-        for (w, g) in want.iter().zip(got.iter()) {
-            dbg!(&w, &g);
-            assert_eq!(w.0, *g);
-        }
+        assert_eq!(want, got);
+    }
+
+    #[test]
+    fn test_solve_2() {
+        let board = Board::parse_flat_board("tim lta ecl", 3, 3);
+
+        let words =
+            fs::read_to_string("american_english_dictionary.txt").expect("Unable to read file");
+        let mut valid_words: Vec<&str> = words
+            .lines()
+            .filter(|s| !s.contains(char::is_uppercase))
+            .filter(|&w| !w.ends_with("'s"))
+            .filter(|&w| w.len() >= 4)
+            .collect();
+        valid_words.sort_unstable();
+        valid_words.dedup();
+
+        let words_that_fit: Vec<Vec<(String, Vec<usize>)>> = (0..(3 * 3))
+            .map(|start_point| board.find_valid_words_from_start(start_point, &valid_words))
+            .collect();
+
+        let mut want: Vec<String> = "title clam"
+            .split_ascii_whitespace()
+            .map(std::string::ToString::to_string)
+            .collect();
+        want.sort_unstable();
+
+        let mut got = solve(&words_that_fit, 2, 3, 3);
+        got.sort_unstable();
+
+        assert_eq!(want, got);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_solve_diag() {
+        // This test covers the case where two words exist that cross on the diagonal,
+        // which is not allowed
+        // In this case, if diagonals were allowed, it would find "camp" and "dress"
+        // but they are not, and it should panic
+        let board = Board::parse_flat_board("cdp amr sse", 3, 3);
+
+        let words =
+            fs::read_to_string("american_english_dictionary.txt").expect("Unable to read file");
+        let mut valid_words: Vec<&str> = words
+            .lines()
+            .filter(|s| !s.contains(char::is_uppercase))
+            .filter(|&w| !w.ends_with("'s"))
+            .filter(|&w| w.len() >= 4)
+            .collect();
+        valid_words.sort_unstable();
+        valid_words.dedup();
+
+        let words_that_fit: Vec<Vec<(String, Vec<usize>)>> = (0..(3 * 3))
+            .map(|start_point| board.find_valid_words_from_start(start_point, &valid_words))
+            .collect();
+
+        let got = solve(&words_that_fit, 2, 3, 3);
+        dbg!(got);
+    }
+
+    #[test]
+    #[ignore = "too long"]
+    fn test_solve_long() {
+        let board = Board::parse_flat_board(
+            "rdpcym umelab rtrcge ileuon agrsni nasgur etioob ltntam",
+            6,
+            8,
+        );
+
+        let words =
+            fs::read_to_string("american_english_dictionary.txt").expect("Unable to read file");
+        let mut valid_words: Vec<&str> = words
+            .lines()
+            .filter(|s| !s.contains(char::is_uppercase))
+            .filter(|&w| !w.ends_with("'s"))
+            .filter(|&w| w.len() >= 4)
+            .collect();
+        valid_words.sort_unstable();
+        valid_words.dedup();
+
+        let words_that_fit: Vec<Vec<(String, Vec<usize>)>> = (0..(6 * 8))
+            .map(|start_point| board.find_valid_words_from_start(start_point, &valid_words))
+            .collect();
+
+        let mut want: Vec<String> = "drum triangle rattle percussion cymbal gong tambourine"
+            .split_ascii_whitespace()
+            .map(std::string::ToString::to_string)
+            .collect();
+        want.sort_unstable();
+
+        let mut got = solve(&words_that_fit, 9, 6, 8);
+        got.sort_unstable();
+
+        assert_eq!(want, got);
     }
 
     #[rstest]
@@ -415,7 +636,7 @@ mod tests {
         #[case] new_indices: usize,
         #[case] expected: bool,
     ) {
-        let result = _bit_overlaps(existing, new_indices);
+        let result = bit_overlaps(existing, new_indices);
         assert_eq!(result, expected);
     }
 }
