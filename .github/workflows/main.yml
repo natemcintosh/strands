@@ -11,9 +11,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: Swatinem/rust-cache@v2
     - name: Checkout repository
       uses: actions/checkout@v4
+
+    - name: Cache
+      uses: Swatinem/rust-cache@v2
 
     - name: Install Rust
       uses: actions-rs/toolchain@v1
