@@ -487,7 +487,7 @@ mod tests {
             .map(|start_point| board.find_valid_words_from_start(start_point, &valid_words))
             .collect();
 
-        let mut want: Vec<String> = "drum triangle rattle percussion cymbal gong tambourine"
+        let mut want: Vec<String> = "dance floss hustle moonwalk movie pets route twerk vogue"
             .split_ascii_whitespace()
             .map(std::string::ToString::to_string)
             .collect();
