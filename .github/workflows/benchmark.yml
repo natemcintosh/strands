@@ -11,25 +11,25 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Cache
-      uses: Swatinem/rust-cache@v2
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
 
-    - name: Install Rust
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
 
-    - name: Install Criterion dependencies
-      run: sudo apt-get update && sudo apt-get install -y gnuplot
+      - name: Install Criterion dependencies
+        run: sudo apt-get update && sudo apt-get install -y gnuplot
 
-    - name: Run Benchmarks
-      run: cargo bench --message-format=json > benchmark.json
+      - name: Run Benchmarks
+        run: cargo bench --message-format=json > benchmark.json
 
-    - name: Save Benchmark Results
-      uses: actions/upload-artifact@v3
-      with:
-        name: benchmark-results
-        path: benchmark.json
+      - name: Save Benchmark Results
+        uses: actions/upload-artifact@v3
+        with:
+          name: benchmark-results
+          path: benchmark.json

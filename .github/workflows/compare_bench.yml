@@ -3,50 +3,50 @@ name: Compare Benchmarks
 on:
   pull_request:
     paths:
-      - '**/*.rs'  # Only trigger on changes to Rust files
+      - "**/*.rs" # Only trigger on changes to Rust files
 
 jobs:
   compare:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Cache
-      uses: Swatinem/rust-cache@v2
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
 
-    - name: Install Rust
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
 
-    - name: Install Criterion dependencies
-      run: sudo apt-get update && sudo apt-get install -y gnuplot
+      - name: Install Criterion dependencies
+        run: sudo apt-get update && sudo apt-get install -y gnuplot
 
-    - name: Download Benchmark Results from main
-      uses: actions/download-artifact@v3
-      with:
-        name: benchmark-results
-        path: benchmark_main.json
-      if: github.event_name == 'pull_request'
+      - name: Download Benchmark Results from main
+        uses: actions/download-artifact@v3
+        with:
+          name: benchmark-results
+          path: benchmark_main.json
+        if: github.event_name == 'pull_request'
 
-    - name: Run Current Benchmarks
-      run: cargo bench --message-format=json > benchmark_current.json
+      - name: Run Current Benchmarks
+        run: cargo bench --message-format=json > benchmark_current.json
 
-    - name: Install critcmp
-      run: cargo install critcmp
+      - name: Install critcmp
+        run: cargo install critcmp
 
-    - name: Compare Benchmarks
-      run: critcmp benchmark_main.json benchmark_current.json --threshold 2 --export markdown > critcmp_report.md
+      - name: Compare Benchmarks
+        run: critcmp benchmark_main.json benchmark_current.json --threshold 2 --export markdown > critcmp_report.md
 
-    - name: Upload Comparison Results
-      uses: actions/upload-artifact@v3
-      with:
-        name: benchmark-comparison
-        path: critcmp_report.md
+      - name: Upload Comparison Results
+        uses: actions/upload-artifact@v3
+        with:
+          name: benchmark-comparison
+          path: critcmp_report.md
 
-    - name: Add Benchmark Results as Comment
-      uses: marocchino/sticky-pull-request-comment@v2
-      with:
-        path: critcmp_report.md
+      - name: Add Benchmark Results as Comment
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          path: critcmp_report.md
