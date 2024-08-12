@@ -26,10 +26,10 @@ jobs:
       run: sudo apt-get update && sudo apt-get install -y gnuplot
 
     - name: Run Benchmarks
-      run: cargo bench
+      run: cargo bench --message-format=json > benchmark.json
 
-    - name: Upload Benchmark Results
+    - name: Save Benchmark Results
       uses: actions/upload-artifact@v3
       with:
         name: benchmark-results
-        path: target/criterion
+        path: benchmark.json
