@@ -1,5 +1,5 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use strands::no_diagonal_overlap;
+use strands::two_words_no_diag_overlap;
 
 // Function to generate a mock block and board configuration.
 // These are just placeholders; you may want to use actual configurations relevant to your use case.
@@ -26,7 +26,7 @@ fn bench_no_diagonal_overlap(c: &mut Criterion) {
             |b, &(block, board)| {
                 b.iter(|| {
                     // Benchmark the no_diagonal_overlap function with the given block and board
-                    no_diagonal_overlap(block, board, width, height)
+                    two_words_no_diag_overlap(block, board, width, height)
                 });
             },
         );

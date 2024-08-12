@@ -243,7 +243,9 @@ fn inner_solve(
 
     for (idx, block) in blocks.iter().enumerate() {
         // If this block can be placed
-        if !bit_overlaps(*block, board) && no_diagonal_overlap(*block, board, board_w, board_h) {
+        if !bit_overlaps(*block, board)
+            && no_diagonal_overlap(selected_blocks, *block, board_w, board_h)
+        {
             // Place the block
             let new_board = block | board;
             selected_blocks.push(*block);
@@ -277,85 +279,6 @@ fn inner_solve(
         }
     }
     None
-}
-
-fn index_to_coords(index: usize, board_w: usize) -> (isize, isize) {
-    (
-        index as isize / board_w as isize,
-        index as isize % board_w as isize,
-    )
-}
-
-fn bits_to_indices(bits: usize, board_w: usize, board_h: usize) -> Vec<usize> {
-    (0..(board_w * board_h))
-        .filter(|&i| bits & (1 << i) != 0)
-        .collect()
-}
-
-fn crosses_existing_lines_with_coords(
-    existing_coords: &[(isize, isize)],
-    new_block_coords: &[(isize, isize)],
-) -> bool {
-    for i in 0..new_block_coords.len() - 1 {
-        let (x1, y1) = new_block_coords[i];
-        let (x2, y2) = new_block_coords[i + 1];
-
-        for j in 0..existing_coords.len() - 1 {
-            let (x3, y3) = existing_coords[j];
-            let (x4, y4) = existing_coords[j + 1];
-
-            if lines_intersect((x1, y1), (x2, y2), (x3, y3), (x4, y4)) {
-                return true;
-            }
-        }
-    }
-    false
-}
-
-fn crosses_existing_lines(
-    existing_indices: &[usize],
-    new_block_indices: &[usize],
-    board_w: usize,
-) -> bool {
-    for i in 0..new_block_indices.len() - 1 {
-        let (x1, y1) = index_to_coords(new_block_indices[i], board_w);
-        let (x2, y2) = index_to_coords(new_block_indices[i + 1], board_w);
-
-        for j in 0..existing_indices.len() - 1 {
-            let (x3, y3) = index_to_coords(existing_indices[j], board_w);
-            let (x4, y4) = index_to_coords(existing_indices[j + 1], board_w);
-
-            // Check if line (x1, y1) to (x2, y2) intersects with line (x3, y3) to (x4, y4)
-            if lines_intersect((x1, y1), (x2, y2), (x3, y3), (x4, y4)) {
-                return true;
-            }
-        }
-    }
-
-    false
-}
-
-fn lines_intersect(
-    a1: (isize, isize),
-    a2: (isize, isize),
-    b1: (isize, isize),
-    b2: (isize, isize),
-) -> bool {
-    // Calculate the direction of the points
-    fn direction(a: (isize, isize), b: (isize, isize), c: (isize, isize)) -> isize {
-        (b.0 - a.0) * (c.1 - a.1) - (b.1 - a.1) * (c.0 - a.0)
-    }
-
-    let d1 = direction(a1, a2, b1);
-    let d2 = direction(a1, a2, b2);
-    let d3 = direction(b1, b2, a1);
-    let d4 = direction(b1, b2, a2);
-
-    if d1 != 0 && d2 != 0 && d3 != 0 && d4 != 0 {
-        return (d1 < 0 && d2 > 0 || d1 > 0 && d2 < 0) && (d3 < 0 && d4 > 0 || d3 > 0 && d4 < 0);
-    }
-
-    false
 }
 
 fn main() {
@@ -455,62 +378,6 @@ mod tests {
         assert_eq!(want, got);
     }
 
-    #[rstest]
-    #[case(0b0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000, 6, 8, vec![])]
-    #[case(0b0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0001, 6, 8, vec![0])]
-    #[case(0b0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0011, 6, 8, vec![0, 1])]
-    #[case(0b0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0100, 6, 8, vec![2])]
-    #[case(0b0000_0000_0000_0000_0000_0000_0000_0000_0000_1000_0000_0000, 6, 8, vec![11])]
-    #[case(0b1111_1100_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000, 6, 8, vec![42, 43, 44, 45, 46, 47])]
-    #[case(0b0_0000_0000, 3, 3, vec![])]
-    #[case(0b0_0000_0001, 3, 3, vec![0])]
-    #[case(0b0_0000_0010, 3, 3, vec![1])]
-    #[case(0b0_0000_0100, 3, 3, vec![2])]
-    #[case(0b0_0000_1000, 3, 3, vec![3])]
-    #[case(0b0_0001_0000, 3, 3, vec![4])]
-    #[case(0b0_0010_0000, 3, 3, vec![5])]
-    #[case(0b0_0100_0000, 3, 3, vec![6])]
-    #[case(0b0_1000_0000, 3, 3, vec![7])]
-    #[case(0b1_0000_0000, 3, 3, vec![8])]
-    #[case(0b1_1111_1111, 3, 3, vec![0, 1, 2, 3, 4, 5, 6, 7, 8])]
-    #[case(0b1_0101_0101, 3, 3, vec![0, 2, 4, 6, 8])]
-    #[case(0b0_1010_1010, 3, 3, vec![1, 3, 5, 7])]
-    #[case(0b0_0100_1001, 3, 3, vec![0, 3, 6])]
-    #[case(0b1_1000_0000, 3, 3, vec![7, 8])]
-    fn test_bits_to_indices(
-        #[case] bits: usize,
-        #[case] board_w: usize,
-        #[case] board_h: usize,
-        #[case] expected: Vec<usize>,
-    ) {
-        let result = bits_to_indices(bits, board_w, board_h);
-        assert_eq!(result, expected);
-    }
-
-    #[rstest]
-    #[case(vec![0, 1, 2, 3], vec![4, 5], 6, false)]
-    #[case(vec![0, 6], vec![1, 7], 6, false)]
-    #[case(vec![0, 1, 2], vec![4, 5], 6, false)]
-    #[case(vec![0, 1, 2], vec![6, 7, 8], 6, false)]
-    #[case(vec![0, 1, 2, 9], vec![6, 7, 8], 6, false)]
-    #[case(vec![0, 6, 1], vec![7, 8], 6, false)]
-    #[case(vec![0, 7], vec![1, 6], 6, true)]
-    #[case(vec![0, 7], vec![6, 1], 6, true)]
-    #[case(vec![0, 3, 4, 2], vec![1, 5, 8, 7, 6], 3, true)]
-    #[case(vec![0, 3, 7], vec![6, 4], 3, true)]
-    #[case(vec![1, 5], vec![2, 4], 3, true)]
-    #[case(vec![0, 4, 8], vec![1, 3], 3, true)]
-    #[case(vec![0, 4, 8], vec![1, 2], 3, false)]
-    fn test_crosses_existing_lines(
-        #[case] existing_indices: Vec<usize>,
-        #[case] new_block_indices: Vec<usize>,
-        #[case] board_w: usize,
-        #[case] expected: bool,
-    ) {
-        let result = crosses_existing_lines(&existing_indices, &new_block_indices, board_w);
-        assert_eq!(result, expected);
-    }
-
     #[test]
     fn test_solve() {
         let words_that_fit: Vec<Vec<(String, Vec<usize>)>> = vec![
@@ -598,10 +465,9 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "too long"]
     fn test_solve_long() {
         let board = Board::parse_flat_board(
-            "rdpcym umelab rtrcge ileuon agrsni nasgur etioob ltntam",
+            "hgueds uovaos lsnltw etcfme eoreor tuivkm tpekoo eslawn",
             6,
             8,
         );

@@ -1,5 +1,5 @@
 #[inline]
-pub fn no_diagonal_overlap(
+pub fn two_words_no_diag_overlap(
     word1: usize,
     word2: usize,
     board_width: usize,
@@ -33,6 +33,19 @@ pub fn no_diagonal_overlap(
     true
 }
 
+/// For each word in `existing_words`, check if `new_word` doesn't
+/// cross any of them diagonally
+pub fn no_diagonal_overlap(
+    existing_words: &[usize],
+    new_word: usize,
+    board_width: usize,
+    board_height: usize,
+) -> bool {
+    existing_words
+        .iter()
+        .all(|&word| two_words_no_diag_overlap(word, new_word, board_width, board_height))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -60,7 +73,7 @@ mod tests {
         #[case] expected: bool,
     ) {
         assert_eq!(
-            no_diagonal_overlap(block, board, board_width, board_height),
+            two_words_no_diag_overlap(block, board, board_width, board_height),
             expected
         );
     }
