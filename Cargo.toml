@@ -11,6 +11,9 @@ smallvec = "1.13.2"
 rstest = "0.18.2"
 criterion = { version = "0.4", features = ["html_reports"] }
 
+[profile.release]
+lto = true
+
 [[bench]]
 name = "my_benchmark"
 harness = false
