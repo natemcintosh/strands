@@ -3,7 +3,7 @@ use std::fs;
 use clap::Parser;
 use smallvec::{smallvec, SmallVec};
 
-use strands::*;
+use strands::no_diagonal_overlap;
 
 /// Simple program to greet a person
 #[derive(Parser, Debug)]
@@ -191,12 +191,13 @@ fn solve(
     board_h: usize,
 ) -> Vec<String> {
     // Convert all the Vec<usize> into single usizes
-    let condensed_words: Vec<usize> = words_that_fit
+    let condensed_words: Vec<Vec<usize>> = words_that_fit
         .iter()
-        .flat_map(|start_point| {
+        .map(|start_point| {
             start_point
                 .iter()
                 .map(|(_, indices)| indices_to_bits(indices))
+                .collect()
         })
         .collect();
 
@@ -205,9 +206,6 @@ fn solve(
         .iter()
         .flat_map(|start_point| start_point.iter().map(|(word, _)| word.clone()))
         .collect();
-
-    // Assume that these two are the same length
-    assert_eq!(condensed_words.len(), flattened_words_that_fit.len());
 
     // Solver
     let mut selected_blocks: SmallVec<[usize; 12]> = smallvec![];
@@ -223,14 +221,14 @@ fn solve(
 
     // Get the words from the indices
     inds.iter()
-        .filter_map(|ind| condensed_words.iter().position(|x| x == ind))
+        .filter_map(|ind| condensed_words.iter().flatten().position(|x| x == ind))
         .map(|ind| flattened_words_that_fit[ind].clone())
         .collect()
 }
 
 fn inner_solve(
     board: usize,
-    blocks: &[usize],
+    blocks: &[Vec<usize>],
     selected_blocks: &mut SmallVec<[usize; 12]>,
     max_len: usize,
     board_w: usize,
@@ -241,43 +239,59 @@ fn inner_solve(
         return None;
     }
 
-    for (idx, block) in blocks.iter().enumerate() {
-        // If this block can be placed
-        if !bit_overlaps(*block, board)
-            && no_diagonal_overlap(selected_blocks, *block, board_w, board_h)
-        {
-            // Place the block
-            let new_board = block | board;
-            selected_blocks.push(*block);
+    // If there are no more blocks, return
+    if let None = blocks.first() {
+        return None;
+    }
 
-            // If we've filled the board
-            if new_board.count_ones() as usize == (board_h * board_w) {
-                return Some(selected_blocks.clone());
-            }
+    // For each start point
+    for (start_pt_idx, start_pt) in blocks.iter().enumerate() {
+        // We take the first bin (start point) and iterate through all of its words
+        for block in start_pt {
+            // If this block can be placed
+            if !bit_overlaps(*block, board)
+                && no_diagonal_overlap(selected_blocks, *block, board_w, board_h)
+            {
+                // Place the block
+                let new_board = block | board;
+                selected_blocks.push(*block);
 
-            // If we're at max len, we haven't yet filled the board. Remove the block
-            // and skip to next word
-            if selected_blocks.len() >= max_len {
+                // If we've filled the board
+                if new_board.count_ones() as usize == (board_h * board_w) {
+                    return Some(selected_blocks.clone());
+                }
+
+                // If we're at max len, we haven't yet filled the board. Remove the block
+                // and skip to next word
+                if selected_blocks.len() >= max_len {
+                    selected_blocks.pop();
+                    continue;
+                }
+
+                // If we've reached the last start point, and there are no more,
+                // and we don't have a solution, return None
+                if blocks.len() == 1 {
+                    return None;
+                }
+
+                // Try to add another block
+                if let Some(res) = inner_solve(
+                    new_board,
+                    &blocks[start_pt_idx + 1..],
+                    selected_blocks,
+                    max_len,
+                    board_w,
+                    board_h,
+                ) {
+                    return Some(res);
+                }
+
+                // Backtrack
                 selected_blocks.pop();
-                continue;
             }
-
-            // Try to add another block
-            if let Some(res) = inner_solve(
-                new_board,
-                &blocks[idx + 1..],
-                selected_blocks,
-                max_len,
-                board_w,
-                board_h,
-            ) {
-                return Some(res);
-            }
-
-            // Backtrack
-            selected_blocks.pop();
         }
     }
+
     None
 }
 
